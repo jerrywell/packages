@@ -4,7 +4,7 @@
 
 import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
-import 'package:markdown/markdown.dart' as md;
+import 'package:markd/markdown.dart' as md;
 
 // ignore_for_file: public_member_api_docs
 

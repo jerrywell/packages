@@ -36,6 +36,11 @@ typedef MarkdownCheckboxBuilder = Widget Function(bool value);
 /// Used by [MarkdownWidget.bulletBuilder]
 typedef MarkdownBulletBuilder = Widget Function(int index, BulletStyle style);
 
+/// Signature for custom bullet widget.
+///
+/// Used by [MarkdownWidget.bulletBuilder]
+typedef BlockElementWrapper = Widget? Function(md.Element element, Widget child);
+
 /// Enumeration sent to the user when calling [MarkdownBulletBuilder]
 ///
 /// Use this to differentiate the bullet styling when building your own.
@@ -79,6 +84,13 @@ abstract class MarkdownElementBuilder {
   /// If you needn't build a widget, return null.
   Widget? visitElementAfter(md.Element element, TextStyle? preferredStyle) =>
       null;
+}
+
+/// this is custmized version of [MarkdownElementBuilder] to fix Quire usage
+abstract class EnhancedMarkdownElementBuilder extends MarkdownElementBuilder {
+  /// called when the block element is visited
+  /// we can wrap this generated child with this callback
+  Widget? visitGeneratedBlockElement(md.Element element, Widget child, TextStyle? preferredStyle) => null;
 }
 
 /// Enum to specify which theme being used when creating [MarkdownStyleSheet]
@@ -168,6 +180,7 @@ abstract class MarkdownWidget extends StatefulWidget {
     this.listItemCrossAxisAlignment =
         MarkdownListItemCrossAxisAlignment.baseline,
     this.softLineBreak = false,
+    this.blockElementWrapper
   }) : super(key: key);
 
   /// The Markdown to display.
@@ -265,6 +278,9 @@ abstract class MarkdownWidget extends StatefulWidget {
   /// specification on soft line breaks when lines of text are joined.
   final bool softLineBreak;
 
+  /// used to wrap element, used in Quire
+  final BlockElementWrapper? blockElementWrapper;
+
   /// Subclasses should override this function to display the given children,
   /// which are the parsed representation of [data].
   @protected
@@ -336,6 +352,7 @@ class _MarkdownWidgetState extends State<MarkdownWidget>
       listItemCrossAxisAlignment: widget.listItemCrossAxisAlignment,
       onTapText: widget.onTapText,
       softLineBreak: widget.softLineBreak,
+      blockElementWrapper: widget.blockElementWrapper
     );
 
     _children = builder.build(astNodes);
@@ -413,6 +430,7 @@ class MarkdownBody extends MarkdownWidget {
     this.shrinkWrap = true,
     bool fitContent = true,
     bool softLineBreak = false,
+    BlockElementWrapper? blockElementWrapper
   }) : super(
           key: key,
           data: data,
@@ -434,6 +452,7 @@ class MarkdownBody extends MarkdownWidget {
           bulletBuilder: bulletBuilder,
           fitContent: fitContent,
           softLineBreak: softLineBreak,
+          blockElementWrapper: blockElementWrapper
         );
 
   /// See [ScrollView.shrinkWrap]
@@ -491,6 +510,7 @@ class Markdown extends MarkdownWidget {
     this.physics,
     this.shrinkWrap = false,
     bool softLineBreak = false,
+    BlockElementWrapper? blockElementWrapper
   }) : super(
           key: key,
           data: data,
@@ -511,6 +531,7 @@ class Markdown extends MarkdownWidget {
           listItemCrossAxisAlignment: listItemCrossAxisAlignment,
           bulletBuilder: bulletBuilder,
           softLineBreak: softLineBreak,
+          blockElementWrapper: blockElementWrapper
         );
 
   /// The amount of space by which to inset the children.

@@ -106,6 +106,7 @@ class MarkdownBuilder implements md.NodeVisitor {
     this.fitContent = false,
     this.onTapText,
     this.softLineBreak = false,
+    this.blockElementWrapper
   });
 
   /// A delegate that controls how link and `pre` elements behave.
@@ -156,6 +157,9 @@ class MarkdownBuilder implements md.NodeVisitor {
   /// Default these spaces are removed in accordance with the Markdown
   /// specification on soft line breaks when lines of text are joined.
   final bool softLineBreak;
+
+  /// used to wrap element, used in Quire
+  final BlockElementWrapper? blockElementWrapper;
 
   final List<String> _listIndents = <String>[];
   final List<_BlockElement> _blocks = <_BlockElement>[];
@@ -427,6 +431,10 @@ class MarkdownBuilder implements md.NodeVisitor {
       } else if (tag == 'hr') {
         child = Container(decoration: styleSheet.horizontalRuleDecoration);
       }
+
+      final Widget? child0 = blockElementWrapper?.call(element, child);
+      if (child0 != null)
+        child = child0;
 
       _addBlockChild(child);
     } else {
