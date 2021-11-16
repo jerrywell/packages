@@ -106,7 +106,7 @@ class MarkdownBuilder implements md.NodeVisitor {
     this.fitContent = false,
     this.onTapText,
     this.softLineBreak = false,
-    this.blockElementWrapper
+    this.customizedMarkdownHandler
   });
 
   /// A delegate that controls how link and `pre` elements behave.
@@ -158,8 +158,8 @@ class MarkdownBuilder implements md.NodeVisitor {
   /// specification on soft line breaks when lines of text are joined.
   final bool softLineBreak;
 
-  /// used to wrap element, used in Quire
-  final BlockElementWrapper? blockElementWrapper;
+  /// Called to get customized function for Quire
+  CustomizedMarkdownHandler? customizedMarkdownHandler;
 
   final List<String> _listIndents = <String>[];
   final List<_BlockElement> _blocks = <_BlockElement>[];
@@ -384,7 +384,7 @@ class MarkdownBuilder implements md.NodeVisitor {
           final dynamic el = element.children![0];
           if (el is md.Element && el.attributes['type'] == 'checkbox') {
             final bool val = el.attributes['checked'] != 'false';
-            bullet = _buildCheckbox(val);
+            bullet = _buildCheckbox(element, val);
           } else {
             bullet = _buildBullet(_listIndents.last);
           }
@@ -433,7 +433,7 @@ class MarkdownBuilder implements md.NodeVisitor {
         child = Container(decoration: styleSheet.horizontalRuleDecoration);
       }
 
-      final Widget? child0 = blockElementWrapper?.call(element, child);
+      final Widget? child0 = customizedMarkdownHandler?.blockElementWrapper.call(element, child);
       if (child0 != null)
         child = child0;
 
@@ -538,9 +538,9 @@ class MarkdownBuilder implements md.NodeVisitor {
     }
   }
 
-  Widget _buildCheckbox(bool checked) {
+  Widget _buildCheckbox(md.Element element, bool checked) {
     if (checkboxBuilder != null) {
-      return checkboxBuilder!(checked);
+      return checkboxBuilder!(element, checked);
     }
     return Padding(
       padding: styleSheet.listBulletPadding!,
