@@ -28,7 +28,8 @@ const List<String> _kBlockTags = <String>[
   'table',
   'thead',
   'tbody',
-  'tr'
+  'tr',
+  'video'
 ];
 
 final Set<String> _inlineBlockTags = <String> {
@@ -39,6 +40,7 @@ final Set<String> _inlineBlockTags = <String> {
   'h4',
   'h5',
   'h6',
+  'video'
 };
 
 const List<String> _kListTags = <String>['ul', 'ol'];
@@ -285,10 +287,11 @@ class MarkdownBuilder implements md.NodeVisitor {
         element.children!.add(md.Text(''));
       }
 
-      final TextStyle parentStyle = _inlines.last.style!;
+      final TextStyle? parentStyle = _inlines.last.style;
+      final TextStyle? style = styleSheet.styles[tag];
       _inlines.add(_InlineElement(
         tag,
-        style: parentStyle.merge(styleSheet.styles[tag]),
+        style: style == null ? parentStyle : parentStyle == null ? style : parentStyle.merge(style),
       ));
     }
 
@@ -338,7 +341,7 @@ class MarkdownBuilder implements md.NodeVisitor {
             : <InlineSpan> [previousTextSpan!];
           children.add(child.textSpan!);
           final TextSpan mergedSpan = TextSpan(children: children);
-          mergedTexts.add(SelectableText.rich(mergedSpan));
+          mergedTexts.add(_buildRichText(mergedSpan));
         } else {
           mergedTexts.add(child);
         }
@@ -509,7 +512,7 @@ class MarkdownBuilder implements md.NodeVisitor {
         child = child0;
 
       if (isInlineBlock) {
-        _inlineWidgets.add(SelectableText.rich(TextSpan(
+        _inlineWidgets.add(_buildRichText(TextSpan(
           // we only simulate a P if last one is an inline element
           text: _inlineWidgets.isNotEmpty && _inlineWidgets.last is SelectableText ? '\n\n' : '\n',
           style: styleSheet.styles[tag]
@@ -571,6 +574,26 @@ class MarkdownBuilder implements md.NodeVisitor {
         _tables.single.rows.last.children!.add(child);
       } else if (tag == 'a') {
         _linkHandlers.removeLast();
+      } else if (tag == 'iframe') {
+        final String? text = element.attributes['src'];
+        _inlines.last.children.add(_buildRichText(
+          TextSpan(
+            style: styleSheet.styles['a'],
+            text: common.XmlUtil.decode(text), //trimText(text.text),
+            recognizer: text != null ? delegate.createLink(text, text, '') : null,
+          ),
+          textAlign: _textAlignForBlockTag(_currentBlockTag),
+        ));
+      } else if (tag == 'source' && _blocks.isNotEmpty && _blocks.last.tag == 'video') {
+        final String? text = element.attributes['src'];
+        _inlines.last.children.add(_buildRichText(
+          TextSpan(
+            style: styleSheet.styles['a'],
+            text: common.XmlUtil.decode(text), //trimText(text.text),
+            recognizer: text != null ? delegate.createLink(text, text, '') : null,
+          ),
+          textAlign: _textAlignForBlockTag(_currentBlockTag),
+        ));
       }
 
       if (current.children.isNotEmpty) {
