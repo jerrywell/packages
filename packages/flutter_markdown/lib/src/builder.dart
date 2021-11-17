@@ -30,6 +30,16 @@ const List<String> _kBlockTags = <String>[
   'tr'
 ];
 
+final Set<String> _inlineBlockTags = <String> {
+  'p',
+  'h1',
+  'h2',
+  'h3',
+  'h4',
+  'h5',
+  'h6',
+};
+
 const List<String> _kListTags = <String>['ul', 'ol'];
 
 bool _isBlockTag(String? tag) => _kBlockTags.contains(tag);
@@ -41,6 +51,7 @@ class _BlockElement {
 
   final String? tag;
   final List<Widget> children = <Widget>[];
+  final List<Widget> inlineWidgets = <Widget>[];
 
   int nextListIndex = 0;
 }
@@ -166,6 +177,7 @@ class MarkdownBuilder implements md.NodeVisitor {
   final List<_TableElement> _tables = <_TableElement>[];
   final List<_InlineElement> _inlines = <_InlineElement>[];
   final List<GestureRecognizer> _linkHandlers = <GestureRecognizer>[];
+  final List<Widget> _inlineWidgets = <Widget>[];
   String? _currentBlockTag;
   String? _lastTag;
   bool _isInBlockquote = false;
@@ -188,6 +200,8 @@ class MarkdownBuilder implements md.NodeVisitor {
       node.accept(this);
     }
 
+    _flushBlock();
+
     assert(_tables.isEmpty);
     assert(_inlines.isEmpty);
     assert(!_isInBlockquote);
@@ -209,7 +223,12 @@ class MarkdownBuilder implements md.NodeVisitor {
 
     int? start;
     if (_isBlockTag(tag)) {
-      _addAnonymousBlockIfNeeded();
+      final bool isInlineBlock = _isInlineBlock(tag);
+      _addAnonymousBlockIfNeeded(isInlineBlock);
+
+      if (!isInlineBlock)
+        _flushBlock();
+
       if (_isListTag(tag)) {
         _listIndents.add(tag);
         if (element.attributes['start'] != null)
@@ -275,6 +294,24 @@ class MarkdownBuilder implements md.NodeVisitor {
     return true;
   }
 
+  /// return elements which are the most inner one and the most outer one in [_blocks]
+  List<_BlockElement?> _extractElementsForTag() {
+    final int length = _blocks.length;
+    // the most outer one is empty element, _blocks[0], we skip it.
+    final _BlockElement? outerTag = length > 1 ? _blocks[1] : null;
+    final _BlockElement? innerTag = length > 2 ? _blocks[length - 1] : null;
+    return <_BlockElement?>[innerTag, outerTag];
+  }
+
+  static const Set<String> _skipInlineBlockMerged = <String> {
+    'blockquote',
+    'ol'//#9410
+  };
+
+  bool _isInlineBlock(String? elementTag, [String? outerElementTag]) {
+    return _inlineBlockTags.contains(elementTag) && (outerElementTag == null || !_skipInlineBlockMerged.contains(outerElementTag));
+  }
+
   /// Returns the text, if any, from [element] and its descendants.
   String? extractTextFromElement(md.Node element) {
     return element is md.Element && (element.children?.isNotEmpty ?? false)
@@ -285,6 +322,33 @@ class MarkdownBuilder implements md.NodeVisitor {
         : (element is md.Element && (element.attributes.isNotEmpty)
             ? element.attributes['alt']
             : '');
+  }
+
+  void _flushBlock() {
+    if (_inlineWidgets.isNotEmpty) {
+
+      final List<Widget> mergedTexts = <Widget>[];
+      for (final Widget child in _inlineWidgets) {
+        if (mergedTexts.isNotEmpty && mergedTexts.last is SelectableText && child is SelectableText) {
+          final SelectableText previous = mergedTexts.removeLast() as SelectableText;
+          final TextSpan? previousTextSpan = previous.textSpan;
+          final List<InlineSpan> children = previousTextSpan?.children != null
+            ? previousTextSpan!.children!.toList()
+            : <InlineSpan> [previousTextSpan!];
+          children.add(child.textSpan!);
+          final TextSpan mergedSpan = TextSpan(children: children);
+          mergedTexts.add(SelectableText.rich(mergedSpan));
+        } else {
+          mergedTexts.add(child);
+        }
+      }
+
+      _inlineWidgets.clear();
+
+
+      final Wrap wrap = Wrap(children: mergedTexts);
+      _addBlockChild(wrap);
+    }
   }
 
   @override
@@ -354,9 +418,14 @@ class MarkdownBuilder implements md.NodeVisitor {
   @override
   void visitElementAfter(md.Element element) {
     final String tag = element.tag;
+    final List<_BlockElement?> elements = _extractElementsForTag();
+    final _BlockElement? outerElement = elements[1];
 
+    final bool isInlineBlock = _isInlineBlock(tag, outerElement?.tag);
     if (_isBlockTag(tag)) {
-      _addAnonymousBlockIfNeeded();
+      _addAnonymousBlockIfNeeded(isInlineBlock);
+
+
 
       final _BlockElement current = _blocks.removeLast();
       Widget child;
@@ -437,7 +506,15 @@ class MarkdownBuilder implements md.NodeVisitor {
       if (child0 != null)
         child = child0;
 
-      _addBlockChild(child);
+      if (isInlineBlock) {
+        _inlineWidgets.add(SelectableText.rich(TextSpan(
+          // we only simulate a P if last one is an inline element
+          text: _inlineWidgets.isNotEmpty && _inlineWidgets.last is SelectableText ? '\n\n' : '\n',
+          style: styleSheet.styles[tag]
+        )));
+      } else {
+        _addBlockChild(child);
+      }
     } else {
       final _InlineElement current = _inlines.removeLast();
       final _InlineElement parent = _inlines.last;
@@ -486,7 +563,7 @@ class MarkdownBuilder implements md.NodeVisitor {
           }
         }
         final Widget child = _buildTableCell(
-          _mergeInlineChildren(current.children, align),
+          _mergeInlineChildren(current.children, align, isInlineBlock),
           textAlign: align,
         );
         _tables.single.rows.last.children!.add(child);
@@ -624,7 +701,7 @@ class MarkdownBuilder implements md.NodeVisitor {
     parent.nextListIndex += 1;
   }
 
-  void _addAnonymousBlockIfNeeded() {
+  void _addAnonymousBlockIfNeeded([bool keepInlineElements = false]) {
     if (_inlines.isEmpty) {
       return;
     }
@@ -647,6 +724,7 @@ class MarkdownBuilder implements md.NodeVisitor {
       final List<Widget> mergedInlines = _mergeInlineChildren(
         inline.children,
         textAlign,
+        keepInlineElements
       );
       final Wrap wrap = Wrap(
         crossAxisAlignment: WrapCrossAlignment.center,
@@ -668,7 +746,8 @@ class MarkdownBuilder implements md.NodeVisitor {
   /// Merges adjacent [TextSpan] children
   List<Widget> _mergeInlineChildren(
     List<Widget> children,
-    TextAlign? textAlign,
+    TextAlign? textAlign, 
+    [bool keepInlineElements = false]
   ) {
     final List<Widget> mergedTexts = <Widget>[];
     for (final Widget child in children) {
@@ -713,6 +792,9 @@ class MarkdownBuilder implements md.NodeVisitor {
         mergedTexts.add(child);
       }
     }
+
+    if (keepInlineElements)
+      _inlineWidgets.addAll(mergedTexts);
     return mergedTexts;
   }
 
